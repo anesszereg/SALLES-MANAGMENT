@@ -261,7 +261,9 @@ insert into document_sequences(prefix,next_number) values
   ('PUR',1),('SAL',1),('RET',1),('PAY',1),('SPAY',1),('PRD',1),('ADJ',1)
 on conflict do nothing;
 
-insert into expense_categories(name) values
+insert into expense_categories(name)
+select name from (values
   ('Rent'),('Electricity'),('Water'),('Salaries'),('Transportation'),
   ('Maintenance'),('Marketing'),('Packaging'),('Administrative'),('Other')
-on conflict do nothing;
+) defaults(name)
+where not exists (select 1 from expense_categories existing where existing.name = defaults.name);

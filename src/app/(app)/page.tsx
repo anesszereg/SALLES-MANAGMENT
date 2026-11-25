@@ -23,7 +23,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
 
   const card = async (sql: string, params: unknown[]) => num((await q1<{ v: number }>(sql, params))?.v);
 
-  const [sales, purchases, collected, custDebt, suppDebt, prodCost, expenses, cogs, discounts, returns, invValue, cashIn, cashOut] = await Promise.all([
+  const [sales, purchases, collected, custDebt, suppDebt, prodCost, expenses, cogs, discounts, returns, invValue, cashIn, cashOut, monthly, monthlyExp, monthlyNet, byCat, mfgVs, top, prof] = await Promise.all([
     card(`select coalesce(sum(total),0) v from sales_invoices where status='confirmed' and sale_date between $1 and $2`, [from, to]),
     card(`select coalesce(sum(total),0) v from purchase_invoices where status='confirmed' and purchase_date between $1 and $2`, [from, to]),
     card(`select coalesce(sum(amount),0) v from financial_transactions where direction='in' and tx_type='customer_payment' and tx_date between $1 and $2`, [from, to]),
@@ -37,27 +37,26 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
     card(`select coalesce(sum(stock*avg_cost),0) v from products`, []),
     card(`select coalesce(sum(amount),0) v from financial_transactions where direction='in'`, []),
     card(`select coalesce(sum(amount),0) v from financial_transactions where direction='out'`, []),
+    q(`select to_char(date_trunc('month', sale_date),'YYYY-MM') m, sum(total) v from sales_invoices where status='confirmed' group by 1 order by 1`),
+    q(`select to_char(date_trunc('month', expense_date),'YYYY-MM') m, sum(amount) v from expenses group by 1 order by 1`),
+    q(`select m, sum(profit) v from (
+      select to_char(date_trunc('month', sale_date),'YYYY-MM') m, total-cogs profit from sales_invoices where status='confirmed'
+      union all select to_char(date_trunc('month', expense_date),'YYYY-MM'), -amount from expenses) s group by 1 order by 1`),
+    q(`select coalesce(c.name,'?') name, sum(si.total) value from sale_items si
+      join products p on p.id=si.product_id left join categories c on c.id=p.category_id
+      join sales_invoices s on s.id=si.invoice_id and s.status='confirmed' group by 1 order by 2 desc`),
+    q(`select p.type name, sum(si.total) value from sale_items si join products p on p.id=si.product_id
+      join sales_invoices s on s.id=si.invoice_id and s.status='confirmed' group by 1`),
+    q(`select p.name, sum(si.quantity) v from sale_items si join products p on p.id=si.product_id
+      join sales_invoices s on s.id=si.invoice_id and s.status='confirmed' group by 1 order by 2 desc limit 8`),
+    q(`select p.name, sum(si.quantity*(si.unit_price-si.unit_cost)) v from sale_items si
+      join products p on p.id=si.product_id join sales_invoices s on s.id=si.invoice_id and s.status='confirmed'
+      group by 1 order by 2 desc limit 8`),
   ]);
   const netSales = sales - returns;
   const gross = netSales - cogs;
   const net = gross - expenses;
   const cash = cashIn - cashOut;
-
-  const monthly = await q(`select to_char(date_trunc('month', sale_date),'YYYY-MM') m, sum(total) v from sales_invoices where status='confirmed' group by 1 order by 1`);
-  const monthlyExp = await q(`select to_char(date_trunc('month', expense_date),'YYYY-MM') m, sum(amount) v from expenses group by 1 order by 1`);
-  const monthlyNet = await q(`select m, sum(profit) v from (
-      select to_char(date_trunc('month', sale_date),'YYYY-MM') m, total-cogs profit from sales_invoices where status='confirmed'
-      union all select to_char(date_trunc('month', expense_date),'YYYY-MM'), -amount from expenses) s group by 1 order by 1`);
-  const byCat = await q(`select coalesce(c.name,'?') name, sum(si.total) value from sale_items si
-      join products p on p.id=si.product_id left join categories c on c.id=p.category_id
-      join sales_invoices s on s.id=si.invoice_id and s.status='confirmed' group by 1 order by 2 desc`);
-  const mfgVs = await q(`select p.type name, sum(si.total) value from sale_items si join products p on p.id=si.product_id
-      join sales_invoices s on s.id=si.invoice_id and s.status='confirmed' group by 1`);
-  const top = await q(`select p.name, sum(si.quantity) v from sale_items si join products p on p.id=si.product_id
-      join sales_invoices s on s.id=si.invoice_id and s.status='confirmed' group by 1 order by 2 desc limit 8`);
-  const prof = await q(`select p.name, sum(si.quantity*(si.unit_price-si.unit_cost)) v from sale_items si
-      join products p on p.id=si.product_id join sales_invoices s on s.id=si.invoice_id and s.status='confirmed'
-      group by 1 order by 2 desc limit 8`);
 
   const cards: [string, number, boolean?][] = [
     [t('total_sales', lang), netSales], [t('total_purchases', lang), purchases],

@@ -61,12 +61,12 @@ export async function saveProduct(fd: FormData) {
   const vals = [
     String(fd.get('reference')), String(fd.get('name')), fd.get('category_id') || null,
     String(fd.get('type')), String(fd.get('description') ?? ''), String(fd.get('image_url') ?? ''),
-    num(fd.get('selling_price')), num(fd.get('min_stock')),
+    num(fd.get('selling_price')), num(fd.get('min_stock')), num(fd.get('avg_cost')),
   ];
   if (id) {
-    await q(`update products set reference=$1,name=$2,category_id=$3,type=$4,description=$5,image_url=$6,selling_price=$7,min_stock=$8 where id=$9`, [...vals, id]);
+    await q(`update products set reference=$1,name=$2,category_id=$3,type=$4,description=$5,image_url=$6,selling_price=$7,min_stock=$8,avg_cost=$9 where id=$10`, [...vals, id]);
   } else {
-    await q(`insert into products(reference,name,category_id,type,description,image_url,selling_price,min_stock) values($1,$2,$3,$4,$5,$6,$7,$8)`, vals);
+    await q(`insert into products(reference,name,category_id,type,description,image_url,selling_price,min_stock,avg_cost) values($1,$2,$3,$4,$5,$6,$7,$8,$9)`, vals);
   }
   rev();
 }
@@ -179,11 +179,6 @@ export async function createSale(fd: FormData) {
   const total = subtotal - discount;
 
   await tx(async () => {
-    // validate stock
-    for (const it of items) {
-      const p = await q1<{ stock: number; name: string }>('select stock,name from products where id=$1 for update', [it.product_id]);
-      if (!p || num(p.stock) < it.quantity) throw new Error(`Insufficient stock: ${p?.name ?? it.product_id}`);
-    }
     const inv = await nextDocNumber('SAL');
     let cogs = 0;
     const lines = items.map(it => ({ ...it, cost: 0 }));

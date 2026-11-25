@@ -1,30 +1,38 @@
-import { PGlite } from '@electric-sql/pglite';
-import fs from 'fs';
-import path from 'path';
+import { AsyncLocalStorage } from 'node:async_hooks';
+import { Pool, type PoolClient } from 'pg';
 
-// Embedded Postgres persisted to ./pgdata (swap for Supabase by using same schema.sql)
-const DATA_DIR = process.env.PGDATA_DIR || path.join(process.cwd(), 'pgdata');
+// PostgreSQL connection pool; DATABASE_URL points to Neon or another PostgreSQL host.
+const g = globalThis as unknown as { __neonPool?: Pool };
+const transactionClient = new AsyncLocalStorage<PoolClient>();
 
-const g = globalThis as unknown as { __pg?: PGlite; __pgReady?: Promise<void> };
-
-export async function getDb(): Promise<PGlite> {
-  if (!g.__pg) {
-    g.__pg = new PGlite(DATA_DIR);
-    g.__pgReady = (async () => {
-      const schema = fs.readFileSync(path.join(process.cwd(), 'src/lib/schema.sql'), 'utf8');
-      await g.__pg!.exec(schema);
-    })();
+export async function getDb(): Promise<Pool> {
+  if (!g.__neonPool) {
+    if (!process.env.DATABASE_URL) throw new Error('DATABASE_URL is required');
+    const url = new URL(process.env.DATABASE_URL);
+    url.searchParams.set('sslmode', 'verify-full');
+    const config = {
+      connectionString: url.toString(),
+      enableChannelBinding: true,
+      max: 12,
+      keepAlive: true,
+      keepAliveInitialDelayMillis: 10000,
+      connectionTimeoutMillis: 20000,
+      idleTimeoutMillis: 600000,
+      allowExitOnIdle: true,
+      options: '-c timezone=Africa/Algiers',
+    };
+    g.__neonPool = new Pool(config);
+    g.__neonPool.on('error', () => console.error('An idle PostgreSQL connection failed'));
   }
-  await g.__pgReady;
-  return g.__pg;
+  return g.__neonPool;
 }
 
 export type Row = Record<string, unknown>;
 
 export async function q<T = Row>(sql: string, params: unknown[] = []): Promise<T[]> {
-  const db = await getDb();
-  const res = await db.query<T>(sql, params as never[]);
-  return res.rows;
+  const db = transactionClient.getStore() ?? await getDb();
+  const res = await db.query(sql, params);
+  return res.rows as T[];
 }
 
 export async function q1<T = Row>(sql: string, params: unknown[] = []): Promise<T | null> {
@@ -34,15 +42,18 @@ export async function q1<T = Row>(sql: string, params: unknown[] = []): Promise<
 
 // Run a function inside a transaction
 export async function tx<T>(fn: () => Promise<T>): Promise<T> {
-  const db = await getDb();
-  await db.exec('BEGIN');
+  if (transactionClient.getStore()) return fn();
+  const client = await (await getDb()).connect();
   try {
-    const out = await fn();
-    await db.exec('COMMIT');
+    await client.query('BEGIN');
+    const out = await transactionClient.run(client, fn);
+    await client.query('COMMIT');
     return out;
   } catch (e) {
-    await db.exec('ROLLBACK');
+    await client.query('ROLLBACK');
     throw e;
+  } finally {
+    client.release();
   }
 }
 

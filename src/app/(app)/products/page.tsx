@@ -9,12 +9,14 @@ import { deleteProduct } from '@/lib/actions';
 export default async function ProductsPage({ searchParams }: { searchParams: Promise<{ s?: string; type?: string }> }) {
   const lang = await getLang();
   const sp = await searchParams;
-  const products = await q(
-    `select p.*, c.name cat from products p left join categories c on c.id=p.category_id
-     where ($1='' or p.name ilike '%'||$1||'%' or p.reference ilike '%'||$1||'%')
-       and ($2='' or p.type=$2) order by p.created_at desc`,
-    [sp.s ?? '', sp.type ?? '']);
-  const categories = await q('select * from categories order by name');
+  const [products, categories] = await Promise.all([
+    q(
+      `select p.*, c.name cat from products p left join categories c on c.id=p.category_id
+       where ($1='' or p.name ilike '%'||$1||'%' or p.reference ilike '%'||$1||'%')
+         and ($2='' or p.type=$2) order by p.created_at desc`,
+      [sp.s ?? '', sp.type ?? '']),
+    q('select * from categories order by name'),
+  ]);
 
   return (
     <div className="space-y-4">

@@ -32,7 +32,7 @@ export default async function SettingsPage() {
         </div>
       </div>
       <div className="card text-sm text-gray-500">
-        <p>Password: set <code>ADMIN_PASSWORD</code> env var (default: <code>admin123</code>). Data dir: <code>./pgdata</code> (embedded Postgres — run <code>src/lib/schema.sql</code> on Supabase to migrate).</p>
+        <p>Password: set <code>ADMIN_PASSWORD</code> env var (default: <code>admin123</code>). Database: Neon PostgreSQL, configured with the server-only <code>DATABASE_URL</code> environment variable.</p>
       </div>
     </div>
   );

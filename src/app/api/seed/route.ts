@@ -4,6 +4,7 @@ import { isAuthed } from '@/lib/helpers';
 
 // One-shot demo seed — inserts sample data only if DB is empty
 export async function POST() {
+  if (process.env.DATABASE_URL) return new NextResponse('Demo seeding is disabled for the hosted database', { status: 403 });
   if (!(await isAuthed())) return new NextResponse('unauthorized', { status: 401 });
   const existing = await q1('select id from products limit 1');
   if (existing) return NextResponse.json({ ok: false, msg: 'already seeded' });
